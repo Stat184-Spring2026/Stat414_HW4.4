@@ -1,0 +1,570 @@
+---
+title: "HW 4.3"
+author: Raouf Halabi
+date: April 14, 2026
+format: html
+---
+  
+# 1. Busiest Airport
+
+## Table
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(rvest)
+library(janitor)
+library(knitr)
+library(kableExtra)
+
+url <- "https://en.wikipedia.org/wiki/List_of_busiest_airports_by_passenger_traffic"
+tables <- read_html(url) |> html_table(fill = TRUE)
+
+airport_tables <- tables |>
+  keep(~{
+    nm <- names(clean_names(.x))
+    any(str_detect(nm, "airport")) && any(str_detect(nm, "passenger"))
+  })
+
+clean_airport_table <- function(df, year) {
+  df <- df |> clean_names()
+  
+  passenger_col <- names(df)[str_detect(names(df), "passenger")][1]
+  
+  df |>
+    select(
+      airport,
+      passengers_raw = all_of(passenger_col)
+    ) |>
+    mutate(
+      year = year,
+      passengers = readr::parse_number(passengers_raw)
+    ) |>
+    select(airport, year, passengers)
+}
+
+data_2025 <- clean_airport_table(airport_tables[[1]], 2025)
+data_2024 <- clean_airport_table(airport_tables[[2]], 2024)
+data_2023 <- clean_airport_table(airport_tables[[3]], 2023)
+data_2022 <- clean_airport_table(airport_tables[[4]], 2022)
+data_2021 <- clean_airport_table(airport_tables[[5]], 2021)
+data_2020 <- clean_airport_table(airport_tables[[6]], 2020)
+
+all_airports <- bind_rows(
+  data_2025,
+  data_2024,
+  data_2023,
+  data_2022,
+  data_2021,
+  data_2020
+)
+
+tidy_airports <- all_airports |>
+  filter(
+    str_detect(airport, "Hartsfield") |
+      str_detect(airport, "Frankfurt") |
+      str_detect(airport, "Beijing Daxing") |
+      str_detect(airport, "Los Angeles") |
+      str_detect(airport, "Heathrow") |
+      str_detect(airport, "Guarulhos")
+  ) |>
+  arrange(airport, year)
+
+clean_table <- tidy_airports |>
+  pivot_wider(
+    names_from = year,
+    values_from = passengers
+  ) |>
+  select(airport, '2020', '2021', '2022', '2023', '2024', '2025') |>
+  arrange(airport) |>
+  mutate(across(-airport, scales::comma))
+
+kable(clean_table, caption = "Passenger Traffic for Six Major Airports 
+      (2020–2025)") |>
+  kable_styling(
+    full_width = FALSE,
+    position = "center",
+    bootstrap_options = c("striped", "hover", "condensed")
+  ) |>
+  row_spec(0, bold = TRUE) |>
+  column_spec(1, bold = TRUE, width = "4cm")
+```
+  
+## Plot/Graph
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width = 14, fig.cap= "Figure 1: Passenger traffic trends across 6 of the 50 largest airports in the world (2020–2025)"}
+
+ggplot(tidy_airports, aes(x = year, y = passengers, color = airport)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  scale_x_continuous(breaks = 2020:2025) +
+  scale_y_continuous(labels = scales::label_comma(), limits = c(0, NA)) +
+  labs(
+    title = "Passenger Traffic for Six Major Airports (2020-2025)",
+    x = "Year",
+    y = "Passengers",
+    color = "Airport"
+  ) +
+  theme_minimal(base_size = 16) +
+  theme(
+    plot.title = element_text(size = 20, face = "bold"),
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 16),
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 14)
+  )
+```
+
+## Narrative Text
+The table and plot both are examining the growth in passenger traffic for 6 of 
+the 50 busiest airports in the world. Although we can't see the full view prior 
+to 2020, all airports experienced a sharp decline or lower traffic levels, where
+travel became heavily restricted due to the Covid-19 Pandemic.
+
+From the visualizations, we can analyze the situation as the starting point for
+each airport in 2020 was at its lowst in the 5-year span. Following 2020, all
+airports showed different levels of upward growth, indicating a recoery in
+passeneger traffic.
+
+Hartsfield-Jackson Airport in Atlanta, Georgia handled the most passenger 
+traffic of the 6 airports by far, which can be shown in the visualization,
+sitting at or exceeding 100 million passengers since 2023. Los Angeles
+International Airport and Heathrow Airport also showed strong signs of
+recovery due to their constant growth and steady increase. 
+
+There does exist some variation between airports. No airport declined in
+passenger travel after 2020, however some leveld off or saw less of a slower
+increase than others. São Paulo/Guarulhos International Airport in Brazil
+struggled to see the same growth, although it did increase. 
+
+Just a note, but some airports also have "NA" for passenger traffic. This was
+due to the fact that when scraping the data, some times the airports fell out of
+the top 50 rankings so they didn't have data on them.
+
+Overall we can see that after 2020 all of the airports saw some kind of growth
+from 2020 to 2025 implying a positive recovery in global travel with consistent
+growth across all airports.
+
+# 2. Monte Carlo Integration
+## Plot/Graph
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Figure 2: Monte Carlo Table with various different sample sizes to show it's growth in stability"}
+
+library(tidyverse)
+library(patchwork)
+
+#Sample Generation/ Simulation
+mc_sample <- function(n, xmin, xmax, ymin, ymax) {
+  
+  # Generate random x values
+  x_values <- runif(n, min = xmin, max = xmax)
+  
+  # Generate random y values
+  y_values <- runif(n, min = ymin, max = ymax)
+  
+  # Combine into a data frame
+  df <- data.frame(
+    x = x_values,
+    y = y_values
+  )
+  
+  return(df)
+}
+
+make_mc_plot <- function(n_points) {
+  
+  mc_data <- mc_sample(
+    n = n_points,
+    xmin = -4,
+    xmax = 4,
+    ymin = 0,
+    ymax = 0.4
+  )
+  
+  mc_data <- mc_data |>
+    mutate(
+      fx = dnorm(x, mean = 0, sd = 1),
+      flag = if_else(y > fx, "above", "on/below")
+    )
+  
+  rect_area <- (4 - (-4)) * (0.4 - 0)
+  p_under <- mean(mc_data$flag == "on/below")
+  mc_estimate <- rect_area * p_under
+  
+  ggplot(mc_data, aes(x = x, y = y, color = flag)) +
+    stat_function(
+      fun = dnorm,
+      args = list(mean = 0, sd = 1),
+      xlim = c(-4, 4),
+      linewidth = 1.1
+    ) +
+    geom_point(size = 1, alpha = 0.7) +
+    scale_x_continuous(limits = c(-4, 4)) +
+    scale_y_continuous(limits = c(0, 0.4)) +
+    labs(
+      title = paste("Monte Carlo Integration, n =", n_points),
+      subtitle = paste("Est. Numerical Integration:", round(mc_estimate, 4)),
+      x = "x",
+      y = "y",
+      color = "flag"
+    ) +
+    theme_minimal()
+}
+
+plot10 <- make_mc_plot(10)
+plot100 <- make_mc_plot(100)
+plot1000 <- make_mc_plot(1000)
+plot10000 <- make_mc_plot(10000)
+
+plot10 + plot100 + plot1000 + plot10000
+```
+
+## Narrative Text
+The Monte Carlo integration method estimates the area under a curve by randomly
+sampling points within a defined region and calculating what proportion of
+points fall below the function. In the four examples above, random points are
+generated uniformly across the domain and bounded vertically. Points are split
+up into two groups, on/below or above. The estimated proportion is then
+calculated based on the ratio.
+
+We can see how the Monte Carlo Integration behaves when given a sample size of
+10, 100, 1000, and 10000. As the sample size gets larger, we can see more
+stability and more clearly defined separation between the behaviors of the
+function. The density of points increases as the sample size increases, yet
+the proportion stays around the same in each example (approximately 1.00). The
+small multiple plots demonstrate this clearly, as the variabilitydecreases and
+the proportion of points under the curve starts to stabalize and densify. The
+visualization supports the reasoning showing that a larger sample results in a
+more uniform and representative distribution of points across the area. 
+
+Overall, the simulation effective illustrates both the process of Monte Carlo
+integration, highlighting that sampling improves with accuracy.
+
+# 3. Planning and Prompting Generative AI
+#### Below is the plan that I developed and fed into ChatGPT to return the resulting R code to generate the given plot
+
+## Context + Goals
+The 'calcium.csv' data set comes from a longitudinal study that followed 31
+women over four years to measure the amound of calcium each of their ulnas in
+their dominant arms absorbed through photon absorptiometry.
+
+The goals of the experiment are to:
+- Compare the calcium levels of each women's dominant arm's ulnas
+
+- Compare trends between the null group and the diet/exercise group
+
+- Determine whether there is a noticeable improvement relative to the null group.
+
+Currently, the data set is not tidy as it is in a wide format, where each woman
+has multiple columns for different years and groups.
+
+## Steps to Tidy Data
+### Sub-Goal 1: Tidy the Data
+#### Steps
+1.) Identify columns coressponding to the null group or diet/exercise group and
+associate each entry with a time (Initial, year 1, year 2, year 3)
+
+2.) Change the format of the data set from wide to long
+
+3.) Create the following columns:
+
+  - (calcium) one column represent the calcium measurement
+  
+  - (group) one column represent the treatment group, whether they were null or
+  were dieting and exercising)
+  
+  - (id) one column for the participant ID
+  
+  - (year) time period of collection (Initial, year 1, year 2, year 3)
+
+NOTE: There should be 136 rows
+
+### Sub-Goal 2: Clean and Validate the Data
+#### Steps
+1.) Make sure that the calcium values are accpeted into the csv file (i.e.
+numeric values in each cell)
+
+2.) Make sure the labels are standardized
+
+3.) Verify for duplicate or missing values
+
+## Visualization
+1.) Use a line plot to visualize the changes over time (x-axis: year,
+y-axis: calcium level, color: Treatment group)
+
+2.) We want to include the individual lines for each particiapnt at a lower
+opacity to show the variation and not clutter the data. An average trend line
+will then be place for each group to simplify the data as much as possible
+
+3.) This graph will be able to the changes in calcium levels over time, the
+diferences in treatment groups, and whether there was a significant impact in
+dieting and exercising and calcium levels.
+
+## Resulting Plot/Graph
+```{r, echo=FALSE, message=FALSE, warning=FALSE, include=FALSE, fig.cap="Figure 3: Calcim Levels Graph visualization output by AI followoing plan"}
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+
+calcium <- read_csv("calcium.csv", show_col_types = FALSE)
+
+names(calcium) <- c(
+  "null_initial", "null_year1", "null_year2", "null_year3",
+  "diet_initial", "diet_year1", "diet_year2", "diet_year3"
+)
+
+calcium_tidy <- bind_rows(
+  calcium |>
+    select(starts_with("null")) |>
+    mutate(id = row_number(), group = "Null") |>
+    pivot_longer(
+      cols = starts_with("null"),
+      names_to = "year",
+      values_to = "calcium"
+    ),
+  
+  calcium |>
+    select(starts_with("diet")) |>
+    mutate(id = row_number(), group = "Diet/Exercise") |>
+    pivot_longer(
+      cols = starts_with("diet"),
+      names_to = "year",
+      values_to = "calcium"
+    )
+) |>
+  mutate(
+    year = case_when(
+      str_detect(year, "initial") ~ "Initial",
+      str_detect(year, "year1") ~ "Year 1",
+      str_detect(year, "year2") ~ "Year 2",
+      str_detect(year, "year3") ~ "Year 3"
+    ),
+    year = factor(year, levels = c("Initial", "Year 1", "Year 2", "Year 3")),
+    calcium = as.numeric(calcium)
+  ) |>
+  drop_na(calcium)
+
+calcium_tidy |>
+  head(20) |>
+  kable(caption = "Table 1. Tidy Calcium Dataset (First 20 Rows)") |>
+  kable_styling(full_width = FALSE)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Figure 3: Calcim Levels Graph visualization output by AI follwoing plan"}
+ggplot(calcium_tidy, aes(x = year, y = calcium, color = group)) +
+  geom_line(aes(group = interaction(group, id)), alpha = 0.25, na.rm = TRUE) +
+  stat_summary(aes(group = group), fun = mean, geom = "line", linewidth = 1.5,
+               na.rm = TRUE) +
+  stat_summary(aes(group = group), fun = mean, geom = "point", size = 2.5,
+               na.rm = TRUE) +
+  labs(
+    title = "Calcium Levels Over Time by Treatment Group",
+    x = "Year",
+    y = "Calcium Level",
+    color = "Group"
+  ) +
+  theme_minimal()
+```
+
+# Visualization Output from Generic Prompt
+![Figure 4. Calcium Levels over time generated from a generic AI prompt.](ChatGPTplot.png)
+
+## Narrative Text
+This section compares the calcium dataset by looking at the developed plan
+and resulting visualization, a generic AI prompt and resulting output, and the
+interpretation of both.
+
+The developed plan incorporates individual trajectories for each participant
+along with group-level summary lines, allowing for a more detailed understanding
+of both variability and overall trends. The faded lines lines show the calcium
+levels per person and the distinct color lines are the average of the members
+for each group, forming a trend line. From this visualization, it is clear that
+both groups follow a similar patern, with a slight increase  in cacium for the
+first year and then a notable decline so by the end of the experiment the null
+and diet/exercise group are basically the same.
+
+Looking at the generic prompt, the generic AI Prompt displays a horrible chart 
+displaying a chart titled "Average Values per Column" where it doesn't take into
+account the two groups, nothing is being compared, and overall, it's hard to
+read and understand. It's very clear to see that without setting up a plan, AI
+doesn't know what it's supposed to do, causing this very confusing output.
+
+Although we could feed AI our data and context and ask it to analyze it for us,
+taking the time to plan and actually approach the problem can get us a lot more
+informed result that we can actually analyze. AI did a good job with what it
+was given, but it's too surface level for the complexity of the problem.
+
+Overall, the comparison demonstrates that while AI can quickly get us a
+visualization, it struggles in understanding the complexity, quality, and depth
+of the problem to output a proper result. Maybe in the future, AI will catch up,
+but at this point, human though process and intentional design is still the
+stronger method for developing and analyzing statistical work.
+
+# 4. Self-Reflection
+Although I had some experience working in R prior to taking STAT 184, I did end
+up learning a lot about the strengths and suits of the R language. For example,
+I am a Data Analyst for some sports teams on on campus so I'm mainly working
+with sports data, I found that scrapping data online is much easier in R rather
+than Python. I have tried web scraping in Python however I just can't seem to
+get it right. R made it really easy to grab all the data and then from there,
+I also learned how to clean up the data and make it usable for analysis.
+
+Another thing I am starting to learn how to use is GitHub. Although I have used
+GitHub before, I've only used it to save my progress. I have never made a
+branch or actually truly integrated it into my workflow, becaue most of my
+projects are solo; I treated GitHub as a 1-Dimensional cloud service. Now I am
+starting to learn how to use branches and other features that I can integrate
+into my workflow to make saving progress and sharing my work a lot easier.
+
+# 5. Apendix
+
+## Usage 1: Creating the AI Graph in Question 3
+
+### Date of Usage
+April 13, 2026
+
+### Prompts Used
+"Please follow the instructions step by step to return the code to run the
+visualization. Please return only the code and no extra jargon"
+``` {text}
+## Context + Goals
+The 'calcium.csv' data set comes from a longitudinal study that followed 31 women over four years to measure the amound of calcium each of their ulnas in their dominant arms absorbed through photon absorptiometry.
+
+The goals of the experiment are to:
+- Compare the calcium levels of each women's dominant arm's ulnas
+
+- Compare trends between the null group and the diet/exercise group
+
+- Determine whether there is a noticable improvement relative to the null group.
+
+Currently, the data set is not dity as it is in a wide format, where each woman has multiple columns for different years and groups.
+
+## Steps to Tidy Data
+### Sub-Goal 1: Tidy the Data
+#### Steps
+1.) Identify columns coressponding to the null group or diet/exercise group and associate each entry with a time (Initial, year 1, year 2, year 3)
+
+2.) Change the format of the data set from wide to long
+
+3.) Create the following columns:
+
+  - (calcium) one column represent the calcium measurement
+  
+  - (group) one column represent the treatment group, whether they were null or were dieting and exercising)
+  
+  - (id) one column for the participant ID
+  
+  - (year) time period of collection (Initial, year 1, year 2, year 3)
+
+NOTE: There should be 136 rows
+
+### Sub-Goal 2: Clean and Validate the Data
+#### Steps
+1.) Make sure that the calcium values are accpeted into the csv file (i.e. numeric values in each cell)
+
+2.) Make sure the labels are standardized
+
+3.) Verify for duplicate or missing values
+
+## Visualization
+1.) Use a line plot to visualize the changes over time (x-axis: year, y-axis: calcium level, color: Treatment group)
+
+2.) We want to include the individual lines for each particiapnt at a lower opacity to show the variation and not clutter the data. An average trend line wil then be place for each group to simplify the data as much as possible
+
+3.) This graph will be able to the changes in calcium levels over time, the diferences in treatment groups, and whether there was a significant impact in dieting and exercising and calcium levels.
+```
+
+### Output
+``` {text}
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+
+calcium <- read_csv("calcium.csv", show_col_types = FALSE)
+
+names(calcium) <- c(
+  "null_initial", "null_year1", "null_year2", "null_year3",
+  "diet_initial", "diet_year1", "diet_year2", "diet_year3"
+)
+
+calcium_tidy <- bind_rows(
+  calcium |>
+    select(starts_with("null")) |>
+    mutate(id = row_number(), group = "Null") |>
+    pivot_longer(
+      cols = starts_with("null"),
+      names_to = "year",
+      values_to = "calcium"
+    ),
+  
+  calcium |>
+    select(starts_with("diet")) |>
+    mutate(id = row_number(), group = "Diet/Exercise") |>
+    pivot_longer(
+      cols = starts_with("diet"),
+      names_to = "year",
+      values_to = "calcium"
+    )
+) |>
+  mutate(
+    year = case_when(
+      str_detect(year, "initial") ~ "Initial",
+      str_detect(year, "year1") ~ "Year 1",
+      str_detect(year, "year2") ~ "Year 2",
+      str_detect(year, "year3") ~ "Year 3"
+    ),
+    year = factor(year, levels = c("Initial", "Year 1", "Year 2", "Year 3")),
+    calcium = as.numeric(calcium)
+  ) |>
+  drop_na(calcium)
+
+calcium_tidy |>
+  head(20) |>
+  kable(caption = "Table 1. Tidy Calcium Dataset (First 20 Rows)") |>
+  kable_styling(full_width = FALSE)
+
+ggplot(calcium_tidy, aes(x = year, y = calcium, color = group)) +
+  geom_line(aes(group = interaction(group, id)), alpha = 0.25, na.rm = TRUE) +
+  stat_summary(aes(group = group), fun = mean, geom = "line", linewidth = 1.5, na.rm = TRUE) +
+  stat_summary(aes(group = group), fun = mean, geom = "point", size = 2.5, na.rm = TRUE) +
+  labs(
+    title = "Calcium Levels Over Time by Treatment Group",
+    x = "Year",
+    y = "Calcium Level",
+    color = "Group"
+  ) +
+  theme_minimal()
+```
+
+## Usage 2: Formatting the Plots
+
+### Date of Usage
+April 13, 2026
+
+### Prompts Used
+"How can I hide the code on a Quarto Document but still have the graphs visible?
+also how can I widen the graph so it takes up more space on the page?"
+
+### Output
+``` {text}
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width = 14}
+```
+
+## Usage 3: Debugging Quarto Errors
+
+### Date of Usage
+April 14, 2026
+
+### Prompts Used
+"The following table has numbers out of order. How can I reorganize it?"
+``` {text}
+mutate(
+      year = year,
+      passengers = readr::parse_number(passengers_raw)
+    ) |>
+    select(airport, year, passengers)
+}
+```
+
+### Output
+``` {text}
+  select(airport, '2020', '2021', '2022', '2023', '2024', '2025') |>
+  arrange(airport) |>
+  mutate(across(-airport, scales::comma))
+```
