@@ -4,7 +4,9 @@ author: "Raouf Halabi"
 date: "April 14, 2026"
 format: pdf
 ---
-  
+
+NOTE: Coding throughout the assignment is done in the style of Tidyverse
+
 # 1. Busiest Airport
 
 ## Table
